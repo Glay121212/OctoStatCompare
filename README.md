@@ -43,3 +43,5 @@ LIMITATIONS
  - Set bonuses are ignored. Weapon speed is not compared. Conditional bonuses are separate stats.
  - Gem/socket systems and Haste only appear if the server prints them as normal tooltip text.
  - Blizzard's own side-by-side comparison tooltips may also appear; that is unrelated.
+ - <img width="523" height="193" alt="image" src="https://github.com/user-attachments/assets/d59933d6-ddc5-482d-adc3-798c260c79bf" />
+
