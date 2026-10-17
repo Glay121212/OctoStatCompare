@@ -1,7 +1,0 @@
-## Interface: 11200
-## Title: OctoStatCompare
-## Notes: Hold Shift over an item to see a stat comparison against your equipped gear, inside the tooltip.
-## Author: JackedCow
-## Version: 1.0.0
-## SavedVariables: OctoStatCompareDB
-OctoStatCompare.lua
