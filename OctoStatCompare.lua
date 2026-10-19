@@ -12,7 +12,7 @@
     - tooltip hooking by replacing methods (no HookScript / hooksecurefunc)
 ]]
 
-local DEFAULTS = { enabled = 1, zero = 0, effects = 0, debug = 0, inline = 0, header = 0, notes = 0 }
+local DEFAULTS = { enabled = 1, zero = 0, effects = 0, debug = 0, inline = 0, header = 0, notes = 0, size = 2 }
 
 local function Opt(k)
   local db = OctoStatCompareDB
@@ -549,6 +549,44 @@ end
 ----------------------------------------------------------------------
 -- Append comparison to a tooltip
 ----------------------------------------------------------------------
+local STATE = {}
+
+-- Bigger text for our lines: raise the font size of just the lines we add,
+-- and restore it before the tooltip is rebuilt (FontStrings are reused).
+local function RestoreFonts(tt)
+  local name = tt:GetName()
+  local st = name and STATE[name]
+  if not st or not st.fonts then return end
+  local i
+  for i = 1, table.getn(st.fonts) do
+    local f = st.fonts[i]
+    f[1]:SetFont(f[2], f[3], f[4])
+  end
+  st.fonts = nil
+end
+
+local function AddLineBig(tt, text, r, g, b, wrap)
+  if r == nil then
+    tt:AddLine(text)
+  elseif wrap then
+    tt:AddLine(text, r, g, b, wrap)
+  else
+    tt:AddLine(text, r, g, b)
+  end
+  local bump = tonumber(Opt("size")) or 0
+  if bump <= 0 then return end
+  local name = tt:GetName()
+  local L = getglobal(name .. "TextLeft" .. tt:NumLines())
+  if not L then return end
+  local font, size, flags = L:GetFont()
+  if not font or not size then return end
+  local st = STATE[name]
+  if not st then st = {}; STATE[name] = st end
+  if not st.fonts then st.fonts = {} end
+  table.insert(st.fonts, { L, font, size, flags })
+  L:SetFont(font, size + bump, flags)
+end
+
 local HEADER = "Compared with equipped:"          -- inline mode
 local HEADER_SHOP = "Stat change if swapped:"       -- equipped-item tooltip mode
 
@@ -576,7 +614,7 @@ end
 
 -- adds header + diff lines for one comparison group to tooltip tt
 local function AddBlock(tt, cand, eq, head)
-  if head then tt:AddLine(head, 1, 1, 1, 1) end
+  if head then AddLineBig(tt, head, 1, 1, 1, 1) end
   if eq.unreadable then return end
   local showNotes = (Opt("notes") == 1 or Opt("effects") == 1)
   local dropDps = false
@@ -585,23 +623,23 @@ local function AddBlock(tt, cand, eq, head)
   local li
   for li = 1, table.getn(lines) do
     local l = lines[li]
-    tt:AddLine(l[1], l[2], l[3], l[4])
+    AddLineBig(tt, l[1], l[2], l[3], l[4])
   end
   if table.getn(lines) == 0 then
-    tt:AddLine("No stat differences", 0.6, 0.6, 0.6)
+    AddLineBig(tt, "No stat differences", 0.6, 0.6, 0.6)
   end
   if showNotes and dropDps and eq.stats["DPS"] then
-    tt:AddLine("DPS not compared (not a like-for-like weapon swap)", 0.6, 0.6, 0.6)
+    AddLineBig(tt, "DPS not compared (not a like-for-like weapon swap)", 0.6, 0.6, 0.6)
   end
   if showNotes and EffectsDiffer(cand, eq) then
-    tt:AddLine("Use/proc/special effects differ (not compared)", 0.6, 0.6, 0.6)
+    AddLineBig(tt, "Use/proc/special effects differ (not compared)", 0.6, 0.6, 0.6)
     if Opt("effects") == 1 then
       local k, v
       for k, v in pairs(cand.effects) do
-        if not eq.effects[k] then tt:AddLine("  + " .. v, 0.7, 0.7, 0.9, 1) end
+        if not eq.effects[k] then AddLineBig(tt, "  + " .. v, 0.7, 0.7, 0.9, 1) end
       end
       for k, v in pairs(eq.effects) do
-        if not cand.effects[k] then tt:AddLine("  - " .. v, 0.9, 0.7, 0.7, 1) end
+        if not cand.effects[k] then AddLineBig(tt, "  - " .. v, 0.9, 0.7, 0.7, 1) end
       end
     end
   end
@@ -659,8 +697,6 @@ local function SourceTip()
   return nil
 end
 
-local STATE = {}
-
 local function OnShopSet(tt, unit, slot)
   if Opt("enabled") ~= 1 then return end
   if unit ~= "player" or not slot then return end
@@ -699,7 +735,7 @@ local function OnShopSet(tt, unit, slot)
         end
         AddBlock(tt, cand, eq, head)
       else
-        tt:AddLine("(included in the main hand comparison)", 0.6, 0.6, 0.6)
+        AddLineBig(tt, "(included in the main hand comparison)", 0.6, 0.6, 0.6)
       end
       tt:Show()
       return
@@ -739,6 +775,7 @@ local function InstallHook(tt, method)
   local orig = tt[method]
   if type(orig) ~= "function" then return end
   tt[method] = function(self, a1, a2, a3, a4, a5)
+    RestoreFonts(self)
     local r1, r2, r3 = orig(self, a1, a2, a3, a4, a5)
     OnItemSet(self, method, a1, a2, a3, a4, a5)
     return r1, r2, r3
@@ -804,6 +841,7 @@ local function InstallShopHook(tt)
   local orig = tt.SetInventoryItem
   if type(orig) ~= "function" then return end
   tt.SetInventoryItem = function(self, a1, a2, a3)
+    RestoreFonts(self)
     local r1, r2, r3 = orig(self, a1, a2, a3)
     if not InlineMode() then OnShopSet(self, a1, a2) end
     return r1, r2, r3
@@ -841,8 +879,12 @@ SlashCmdList["OCTOSTATCOMPARE"] = function(msg)
   elseif msg == "inline" then Toggle("inline")
   elseif msg == "header" then Toggle("header")
   elseif msg == "notes" then Toggle("notes")
+  elseif string.find(msg, "^size%s*%d+$") then
+    local s1, e1, n = string.find(msg, "^size%s*(%d+)$")
+    SetOpt("size", tonumber(n))
+    Print("comparison text size bonus = " .. n .. " (0 = normal)")
   else
-    Print("commands: /osc on | off | zero | effects | debug | inline | header | notes")
+    Print("commands: /osc on | off | zero | effects | debug | inline | header | notes | size N")
     Print("enabled=" .. OnOff(Opt("enabled")) .. "  zero=" .. OnOff(Opt("zero")) ..
           "  effects=" .. OnOff(Opt("effects")) .. "  debug=" .. OnOff(Opt("debug")) ..
           "  inline=" .. OnOff(Opt("inline")) .. "  header=" .. OnOff(Opt("header")) ..
